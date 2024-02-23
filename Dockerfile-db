@@ -1,0 +1,11 @@
+# Use the official MySQL image as a base image
+FROM mysql:8.0
+
+# Set environment variables for MySQL
+ENV MYSQL_ROOT_PASSWORD=0707
+ENV MYSQL_DATABASE=candidates_resumes
+ENV MYSQL_USER=DEJ
+ENV MYSQL_PASSWORD=1234
+
+# Copy the initialization SQL script to the image
+COPY ./init2.sql /docker-entrypoint-initdb.d/init2.sql

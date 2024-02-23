@@ -1,0 +1,38 @@
+version: '3'
+
+services:
+  # MySQL Database
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile-db
+    environment:
+      MYSQL_ROOT_PASSWORD: 0707
+      MYSQL_DATABASE: candidates_resumes
+      MYSQL_USER: DEJ
+      MYSQL_PASSWORD: 1234
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./init2.sql:/docker-entrypoint-initdb.d/init2.sql
+    networks:
+      - backend
+
+  # FastAPI Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: DEJ
+      MYSQL_PASSWORD: 1234
+      MYSQL_DATABASE: candidates_resumes
+    ports:
+      - "8000:8000"
+    networks:
+      - backend
+
+networks:
+  backend:
