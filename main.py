@@ -1,13 +1,17 @@
 from fastapi.responses import StreamingResponse
 import io
 from fastapi.responses import JSONResponse
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import PlainTextResponse
 import mysql.connector
 import os
 import subprocess
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+from pydantic import BaseModel
+from typing import Optional
 
-app = FastAPI()
 
 def connect_to_database():
     return mysql.connector.connect(
@@ -42,10 +46,11 @@ def get_person_cv_by_name(full_name, cursor):
     if not contact_row:
         return None, None, None, None
     candidate_id = contact_row[0][0]
-    # Add this line for debugging
+    # debugging line
     print(f"Retrieved candidate ID for '{full_name}': {candidate_id}")
 
-    # Unpack values correctly from get_person_cv_by_id
+    # Unpack values
+    # from get_person_cv_by_id
     candidate_row, education_row, experience_row, projects_row = get_person_cv_by_id(candidate_id, cursor)
 
     return candidate_row, education_row, experience_row, projects_row
@@ -567,7 +572,7 @@ def generate_internal_cv_content(cursor, candidate_id, full_name, professional_t
     \\resumeHeadingListStart{{}}
     \\resumeItemListStart{{}}
      {{{formatted_tech_list}}}
-    \\resumeItemListEnd{{}}{{\\item}}  # Add a dummy item if needed
+    \\resumeItemListEnd{{}}{{\\item}}
     \\resumeHeadingListEnd{{}}
     """
         internal_cv_content += f"""
@@ -607,6 +612,9 @@ def write_to_tex_file_internal(full_name, internal_cv_content):
 
 def compile_pdf(tex_file_name):
     subprocess.run(['pdflatex', tex_file_name])
+
+
+app = FastAPI()
 
 
 @app.get("/")
@@ -779,6 +787,7 @@ async def get_pdf_content(candidate_id: int):
                 formatted_project_description = formatted_project_description.replace('%', escape_percentage)
                 projects_content += (f"\\resumeTrioHeading{{{project_title}}}{{}}{{}}\n\\resumeItemListStart{{}}"
                                      f"\n{formatted_project_description}\n\\resumeItemListEnd{{}}\n")
+
 
 
             # Generate CV content for clients
@@ -1011,4 +1020,84 @@ async def get_pdf_internal_cv(full_name: str):
 
         except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# Database URL function
+def get_mysql_url():
+    db_connection = connect_to_database()
+    db_connection.close()
+    return f"mysql://{os.environ.get('MYSQL_USER', 'DEJ')}:{os.environ.get('MYSQL_PASSWORD', '1234')}@{os.environ.get('MYSQL_HOST', 'db')}:{os.environ.get('MYSQL_PORT', 3306)}/{os.environ.get('MYSQL_DATABASE', 'candidates_resumes')}"
+
+
+# SQLAlchemy engine and session setup
+engine = create_engine(get_mysql_url())
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+
+# Define database models
+class Candidate(Base):
+    __tablename__ = "candidates"
+    candidate_id = Column(Integer, primary_key=True, index=True)
+    full_name = Column(String(50))
+    professional_title = Column(String(50))
+    location = Column(String(50))
+    phone_number = Column(String(50))
+    email = Column(String(50))
+    experience_years = Column(String(50))
+    technical_rating = Column(String(50))
+    nontechnical_rating = Column(String(50))
+    minimum_salary_expectation = Column(String(50))
+    last_cv_update = Column(String(50))
+    additional_notes = Column(String(50))
+
+
+# Pydantic model for request body validation
+class CandidateCreate(BaseModel):
+    full_name: str
+    professional_title: str
+    location: str
+    phone_number: str
+    email: str
+    experience_years: str
+    technical_rating: Optional[str] = None
+    nontechnical_rating: Optional[str] = None
+    minimum_salary_expectation: Optional[str] = None
+    last_cv_update: Optional[str] = None
+    additional_notes: Optional[str] = None
+
+
+# Endpoint to create a new candidate
+@app.post("/add-candidate/")
+def create_candidate(candidate: CandidateCreate, db: Session = Depends(SessionLocal)):
+    # Create a new candidate object with data from the request
+    db_candidate = Candidate(
+        full_name=candidate.full_name,
+        professional_title=candidate.professional_title,
+        location=candidate.location,
+        phone_number=candidate.phone_number,
+        email=candidate.email,
+        experience_years=candidate.experience_years,
+        technical_rating=candidate.technical_rating,
+        nontechnical_rating=candidate.nontechnical_rating,
+        minimum_salary_expectation=candidate.minimum_salary_expectation,
+        last_cv_update=candidate.last_cv_update,
+        additional_notes=candidate.additional_notes
+    )
+
+    # Add the candidate to the session
+    db.add(db_candidate)
+
+    # Commit the transaction
+    db.commit()
+
+    # Refresh the candidate object to get the updated values from the database
+    db.refresh(db_candidate)
+
+    # Return the created candidate
+    return db_candidate
+
+
+
 
